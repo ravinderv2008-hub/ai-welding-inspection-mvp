@@ -1,0 +1,14 @@
+backend/.venv/
+frontend/node_modules/
+frontend/dist/
+ai-welding-inspection-mvp.zip
+backend/.vercel/
+frontend/.vercel/
+backend/__pycache__/
+backend/ml/__pycache__/
+backend/services/__pycache__/
+backend/weld_inspections.db
+backend/uploads/*
+backend/generated_reports/*
+!backend/uploads/.gitkeep
+!backend/generated_reports/.gitkeep
