@@ -1,4 +1,4 @@
-import json, os, re, time, uuid
+import base64, json, os, re, time, uuid
 from datetime import datetime
 from pathlib import Path
 BASE=Path(__file__).parent
@@ -65,6 +65,13 @@ def sample(name:str):
     path=SAMPLES/name
     if not path.exists(): raise HTTPException(404,'Sample not found')
     return FileResponse(path,media_type='image/jpeg')
+def inline_jpeg(image):
+    h,w=image.shape[:2]; scale=min(1.0,1280/max(h,w))
+    if scale<1: image=cv2.resize(image,(int(w*scale),int(h*scale)),interpolation=cv2.INTER_AREA)
+    ok, encoded=cv2.imencode('.jpg',image,[int(cv2.IMWRITE_JPEG_QUALITY),82])
+    if not ok: raise HTTPException(500,'Could not prepare inspection preview')
+    return 'data:image/jpeg;base64,'+base64.b64encode(encoded).decode('ascii')
+
 def annotate(image, result, path):
     x,y,w,h=result['bbox']; out=image.copy(); color=(55,220,120) if result['verdict']=='PASS' else (40,85,240)
     cv2.rectangle(out,(x,y),(x+w,y+h),color,3)
@@ -97,7 +104,8 @@ async def analyze(image:UploadFile|None=File(None), sample_name:str|None=Form(No
     stamp=datetime.now().astimezone().isoformat(timespec='seconds')
     values=(inspection_id,stamp,filename,str(image_path),str(annotated_path),defect,result['confidence'],result['severity'],result['verdict'],elapsed,None,summary,result['analysis_mode'],json.dumps(result['bbox']))
     with connect() as db: cur=db.execute('INSERT INTO inspections(inspection_id,timestamp,filename,image_path,annotated_path,defect_type,confidence,severity,verdict,processing_time,report_path,summary,analysis_mode,bbox) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',values); rowid=cur.lastrowid
-    record=get_record(rowid); return public(record)
+    record=get_record(rowid); annotated=cv2.imread(str(annotated_path));
+    return public(record) | {'image_data_url':inline_jpeg(arr),'annotated_data_url':inline_jpeg(annotated)}
 def get_record(id):
     with connect() as db: row=db.execute('SELECT * FROM inspections WHERE id=?',(id,)).fetchone()
     if not row: raise HTTPException(404,'Inspection not found')
