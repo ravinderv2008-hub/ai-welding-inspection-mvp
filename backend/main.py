@@ -104,8 +104,15 @@ async def analyze(image:UploadFile|None=File(None), sample_name:str|None=Form(No
     stamp=datetime.now().astimezone().isoformat(timespec='seconds')
     values=(inspection_id,stamp,filename,str(image_path),str(annotated_path),defect,result['confidence'],result['severity'],result['verdict'],elapsed,None,summary,result['analysis_mode'],json.dumps(result['bbox']))
     with connect() as db: cur=db.execute('INSERT INTO inspections(inspection_id,timestamp,filename,image_path,annotated_path,defect_type,confidence,severity,verdict,processing_time,report_path,summary,analysis_mode,bbox) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',values); rowid=cur.lastrowid
-    record=get_record(rowid); annotated=cv2.imread(str(annotated_path));
-    return public(record) | {'image_data_url':inline_jpeg(arr),'annotated_data_url':inline_jpeg(annotated)}
+    record=get_record(rowid); annotated=cv2.imread(str(annotated_path)); report_path=REPORTS/(inspection_id+'.pdf')
+    image_data=inline_jpeg(arr); annotated_data=inline_jpeg(annotated)
+    original_preview_path=REPORTS/(inspection_id+'_original.jpg'); annotated_preview_path=REPORTS/(inspection_id+'_annotated.jpg')
+    original_preview_path.write_bytes(base64.b64decode(image_data.split(',',1)[1])); annotated_preview_path.write_bytes(base64.b64decode(annotated_data.split(',',1)[1]))
+    report_record=record | {'image_path':str(original_preview_path),'annotated_path':str(annotated_preview_path)}
+    create_report(report_record,report_path)
+    with connect() as db: db.execute('UPDATE inspections SET report_path=? WHERE id=?',(str(report_path),rowid))
+    pdf_data='data:application/pdf;base64,'+base64.b64encode(report_path.read_bytes()).decode('ascii')
+    return public(record) | {'image_data_url':image_data,'annotated_data_url':annotated_data,'report_data_url':pdf_data}
 def get_record(id):
     with connect() as db: row=db.execute('SELECT * FROM inspections WHERE id=?',(id,)).fetchone()
     if not row: raise HTTPException(404,'Inspection not found')
